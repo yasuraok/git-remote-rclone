@@ -4,8 +4,8 @@ set -x
 PS4='\n--------------\n${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 REMOTE=grrtest
-TESTDIR=~/TESTDIR
-TESTDIR2=~/TESTDIR2
+TESTDIR=~/GIT_REMOTE_RCLONE/TESTDIR
+TESTDIR2=~/GIT_REMOTE_RCLONE/TESTDIR2
 
 # test init: clear remote and local
 rclone delete -v "${REMOTE}:"
