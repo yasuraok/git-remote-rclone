@@ -6,6 +6,7 @@ from pathlib import Path
 from shutil import rmtree
 import subprocess
 import sys
+import hashlib
 from urllib.parse import urlparse
 
 import inspect
@@ -77,7 +78,7 @@ class RCloneRemote(object):
         return cat.stdout if (not cat.returncode) and cat.stdout else ''
 
     def get_remote_state(self):
-        """Return a dict with hashes for the remote repo archive or {}
+        """Return a hash for the remote repo archive or ''
 
         Raises
         ------
@@ -87,17 +88,28 @@ class RCloneRemote(object):
         """
         url = self.parsed_url
         # request listing of the remote dir with the repo archive
-        lsjson = subprocess.run([
-            'rclone', 'lsjson', '{}:{}'.format(url.netloc, url.path),
-            '--files-only', '--no-modtime', '--hash'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+        lsjson = subprocess.run(['rclone', 'lsjson', '{}:{}'.format(url.netloc, url.path),
+                                '--files-only', '--no-modtime'],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
         if lsjson.returncode == 3: # no repo on remote (but remote is accessible)
-            return None
+            self.log('Remote is accessible but no repo found')
+            return ''
         elif lsjson.returncode:
             raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
-        ls = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        return ls.get('repo.7z', {}).get('Hashes', {})
+
+        files = {i['Path']: i for i in json.loads(lsjson.stdout)}
+        # get the key from files that starts with repo and ends with .7z
+        repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.7z')]
+
+        # error out if repo_file has more than one element
+        if len(repo_file) > 1:
+            raise RuntimeError('Multiple repo files found: {}'.format(repo_file))
+
+        # extract XXXX pattern from repo-XXXX.7z
+        if not repo_file:
+            self.log('No repo file found')
+        return repo_file[0][5:-4] if repo_file else ''
 
     def mirror_repo_if_needed(self):
         """Ensure a local Git repo mirror of the one archived at the remote.
@@ -106,9 +118,9 @@ class RCloneRemote(object):
         url = self.parsed_url
         # stamp file with last syncronization IDs
         synced = self.workdir / 'synced'
-        repo_hashes = self.get_remote_state()
+        repo_hash = self.get_remote_state()
 
-        if synced.exists() and not repo_hashes:
+        if synced.exists() and not repo_hash:
             # we had it sync'ed before, but now it is gone from the remote
             # remove sync stamp, but leave any local mirror untouched as it's the only copy
             synced.unlink()
@@ -117,27 +129,32 @@ class RCloneRemote(object):
         if synced.exists():
             # compare states, try to be robust and take any hash match
             # unclear when which hash is available, but any should be good
-            last_hashes = json.load(synced.open())
-            if any(repo_hashes.get(k, None) == v
-                    for k, v in last_hashes.items()):
-                # local sync matches remote situation
+
+            # read single line string from synced file
+            with open(synced, 'r') as f:
+                last_hash = f.readline().strip()
+                self.log(f'Last hash: {last_hash}. repo_hash: {repo_hash}')
+            if last_hash == repo_hash: # local sync matches remote
                 return
 
-        if not repo_hashes: # there is nothing at the remote end, nothing to sync
+        if not repo_hash: # there is nothing at the remote end, nothing to sync
             return
 
         # mirror the repo
         self.log('Downloading repository archive')
         sync_dir = self.workdir / 'sync'
-        subprocess.run(['rclone', 'copy', '{}:{}/repo.7z'.format(url.netloc, url.path), str(sync_dir)],
-            check=True)
-        repo_archive = sync_dir / 'repo.7z'
+        subprocess.run(['rclone', 'copy', '--verbose', '--include', 'repo-*.7z', '{}:{}/'.format(
+                            url.netloc, url.path),
+                       str(sync_dir)],
+                       check=True)
+        repo_archive = list(sync_dir.glob('repo-*.7z'))[0]
+
         self.log('Extracting repository archive')
         rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
         subprocess.run(['7z', 'x', str(repo_archive)],
                         cwd=str(self.workdir), stdout=subprocess.PIPE, check=True)
         rmtree(str(sync_dir), ignore_errors=True)
-        synced.write_text(json.dumps(repo_hashes)) # update sync stamp only after everything else was successful
+        synced.write_text(repo_hash) # update sync stamp only after everything else was successful
 
     def import_refs_from_mirror(self, refs):
         """Uses fast-export to pull refs from the local repository mirror
@@ -239,15 +256,20 @@ class RCloneRemote(object):
         sync_dir = self.workdir / 'sync'
         if not sync_dir.exists():
             sync_dir.mkdir()
-        subprocess.run([
-            '7z', 'u', str(sync_dir / 'repo.7z'), 'repo'],
-            cwd=str(self.workdir),
-            stdout=subprocess.PIPE,
-            check=True,
-        )
+        repo_file = sync_dir / 'repotmp.7z'
+        subprocess.run([ '7z', 'u', str(repo_file), 'repo'],
+                       cwd=str(self.workdir),
+                       stdout=subprocess.PIPE,
+                       check=True)
+
+        # compute sha1 of repo_file
+        repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
+
+        # rename repo_file to include repo_hash string
+        repo_file.rename(sync_dir / f'repo-{repo_hash}.7z')
+        
         # dump refs for a later LIST of the remote
-        (sync_dir / 'refs').write_text(
-            self.format_refs_in_mirror())
+        (sync_dir / 'refs').write_text(self.format_refs_in_mirror())
 
         self.log('Upload repository archive')
         sync_repo = subprocess.run(['rclone', 'sync', str(sync_dir),
@@ -255,8 +277,7 @@ class RCloneRemote(object):
         if sync_repo.returncode:
             # TODO we could retry...
             # make a record which refs failed to update/upload
-            upload_failed_marker.write_text(
-                json.dumps(updated_refs))
+            upload_failed_marker.write_text(json.dumps(updated_refs))
             # to not report refs as successfully updated
             return
         else:
@@ -265,17 +286,19 @@ class RCloneRemote(object):
             rmtree(str(sync_dir), ignore_errors=True)
 
         # upload was successful, so we can report that
+        self.log(f"Upload was successful. updated_refs: {updated_refs}")
         for ref in updated_refs:
             print('ok {}'.format(ref))
 
         # lastly update the sync stamp to avoid redownload of what was
         # just uploaded
         synced = self.workdir / 'synced'
-        repo_hashes = self.get_remote_state()
-        if not repo_hashes:
+        repo_hash = self.get_remote_state()
+        if not repo_hash:
             self.log('Failed to update sync stamp after successful upload')
         else:
-            synced.write_text(json.dumps(repo_hashes))
+            self.log(f'Updating sync stamp to repo_hash: {repo_hash}')
+            synced.write_text(repo_hash)
 
     def send_capabilities(self):
         self.PrintFrame()
