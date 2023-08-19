@@ -1,5 +1,7 @@
 #!/usr/bin/bash
 set -eo pipefail
+set -x
+PS4='\n--------------\n${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 REMOTE=grrtest
 TESTDIR=~/TESTDIR
