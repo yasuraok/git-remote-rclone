@@ -1,14 +1,4 @@
 #!/usr/bin/env python
-## emacs: -*- mode: python; py-indent-offset: 4; tab-width: 4; indent-tabs-mode: nil -*-
-# ex: set sts=4 ts=4 sw=4 noet:
-# ## ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-#
-#   See COPYING file distributed along with the datalad package for the
-#   copyright and license terms.
-#
-# ## ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-"""
-"""
 
 import json
 import os
@@ -18,32 +8,25 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+import inspect
+
 
 class RCloneRemote(object):
     """git-remote-helper implementation to interface rclone remotes."""
     def __init__(self,
-                 gitdir,
-                 remote,
-                 url,
+                 gitdir: str,
+                 remote: str,
+                 url: str,
                  instream=sys.stdin,
                  outstream=sys.stdout,
                  errstream=sys.stderr):
         """
-        Parameters
-        ----------
-        gitdir : str
-          Path to the GITDIR of the repository to operate on (provided
-          by Git).
-        remote : str
-          Remote label to use (provided by Git).
-        url : str
-          rclone://-type URL of the remote (provided by Git).
-        instream :
-          Stream to read communication from Git from.
-        outstream :
-          Stream to communicate outcomes to Git.
-        errstream :
-          Stream for logging.
+        gitdir:    Path to the GITDIR of the repository to operate on (provided by Git).
+        remote:    Remote label to use (provided by Git).
+        url:       rclone: //-type URL of the remote (provided by Git).
+        instream:  Stream to read communication from Git from.
+        outstream: Stream to communicate outcomes to Git.
+        errstream: Stream for logging.
         """
         self.parsed_url = urlparse(url)
         self.remote = remote
@@ -62,36 +45,39 @@ class RCloneRemote(object):
         self.marks_git.touch()
         self.marks_rclone.touch()
 
+    def PrintFrame(self):
+        """Helps debug"""
+        callerframerecord = inspect.stack()[1]    # 0 represents this line
+                                                  # 1 represents line at caller
+        frame = callerframerecord[0]
+        info = inspect.getframeinfo(frame)
+
+        print(info.lineno, info.function, file=self.errstream)
+        # print(info.filename)
+
+
     def log(self, *args):
         print(*args, file=self.errstream)
 
-    def send(self, msg):
-        print(msg, end='', file=self.outstream, flush=True)
+    def send(self, msg=''):
+        print(msg, end='\n', file=self.outstream, flush=True)
 
     def get_remote_refs(self):
         """Report remote refs
-
         There are kept in a dedicated "refs" file at the remote.
-
-        Returns
-        -------
-        str
+        Returns str
         """
+        self.PrintFrame()
         url = self.parsed_url
         cat = subprocess.run([
             'rclone', 'cat', '{}:{}/refs'.format(url.netloc, url.path)],
             stdout=subprocess.PIPE,
-            # capture errors, not having refs is a normal thing
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
-        if cat.returncode:
-            # listing failed, nothing there
-            return ''
-        return cat.stdout if cat.stdout else ''
+            stderr=subprocess.PIPE, # capture errors, not having refs is a normal thing
+            universal_newlines=True)
+        return cat.stdout if (not cat.returncode) and cat.stdout else ''
 
     def get_remote_state(self):
-        """Return a dict with hashes for the remote repo archive or None
+        """Return a dict with hashes for the remote repo archive or {}
 
         Raises
         ------
@@ -105,17 +91,13 @@ class RCloneRemote(object):
             'rclone', 'lsjson', '{}:{}'.format(url.netloc, url.path),
             '--files-only', '--no-modtime', '--hash'],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if lsjson.returncode == 3:
-            # ls didn't find a repo at the remote end, but could talk to
-            # the rclone remote itself -> nothing to there
+            stderr=subprocess.PIPE)
+        if lsjson.returncode == 3: # no repo on remote (but remote is accessible)
             return None
         elif lsjson.returncode:
-            raise RuntimeError(
-                'Accesing rclone remote failed: {}'.format(lsjson.stderr))
+            raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
         ls = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        return ls.get('repo.7z', {}).get('Hashes', None)
+        return ls.get('repo.7z', {}).get('Hashes', {})
 
     def mirror_repo_if_needed(self):
         """Ensure a local Git repo mirror of the one archived at the remote.
@@ -123,11 +105,11 @@ class RCloneRemote(object):
         # TODO acquire and release lock
         url = self.parsed_url
         # stamp file with last syncronization IDs
-        synced = self.workdir / 'synced'
         repo_hashes = None
+        synced = self.workdir / 'synced'
         if synced.exists():
             repo_hashes = self.get_remote_state()
-            if repo_hashes is None:
+            if not repo_hashes:
                 # we had it sync'ed before, but now it is gone from the
                 # remote -- we have all that is left locally
                 synced.unlink()
@@ -141,15 +123,16 @@ class RCloneRemote(object):
                     for k, v in last_hashes.items()):
                 # local sync matches remote situation
                 return
-        if repo_hashes is None:
+        if not repo_hashes:
             # in case we never sync'ed, obtain the ID info prior download
             # so we have it, whenever the download succeeded
             repo_hashes = self.get_remote_state()
-        if repo_hashes is None:
+        if not repo_hashes:
             # there is nothing at the remote end
             return
         sync_dir = self.workdir / 'sync'
         self.log('Downloading repository archive')
+        self.log(url)
         subprocess.run([
             'rclone', 'copy', '{}:{}/repo.7z'.format(url.netloc, url.path),
             str(sync_dir)],
@@ -157,22 +140,14 @@ class RCloneRemote(object):
         )
         repo_archive = sync_dir / 'repo.7z'
         self.log('Extracting repository archive')
-        if self.repodir.exists():
-            # if we extract, we cannot tollerate left-overs
-            rmtree(str(self.repodir), ignore_errors=True)
-        subprocess.run([
-            '7z', 'x', str(repo_archive)],
-            cwd=str(self.workdir),
-            stdout=subprocess.PIPE,
-            check=True,
-        )
+        rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
+        subprocess.run(['7z', 'x', str(repo_archive)],
+                        cwd=str(self.workdir), stdout=subprocess.PIPE, check=True)
         rmtree(str(sync_dir), ignore_errors=True)
-        # update sync stamp only after everything else was successful
-        synced.write_text(json.dumps(repo_hashes))
+        synced.write_text(json.dumps(repo_hashes)) # update sync stamp only after everything else was successful
 
     def import_refs_from_mirror(self, refs):
         """Uses fast-export to pull refs from the local repository mirror
-
         The mirror must exist, when this functional is called.
         """
         if not self.repodir.exists():
@@ -194,6 +169,13 @@ class RCloneRemote(object):
             check=True,
         )
 
+
+    def run_cmd(self, cmd):
+        """Run command and return stdout"""
+        env = os.environ.copy()
+        env['GIT_DIR'] = str(self.repodir)
+        return subprocess.run(cmd, env=env, check=True, stdout=subprocess.PIPE, universal_newlines=True).stdout
+
     def format_refs_in_mirror(self):
         """Format a report on refs in the mirror like LIST wants it
 
@@ -202,22 +184,8 @@ class RCloneRemote(object):
         refs = ''
         if not self.repodir.exists():
             return refs
-        env = os.environ.copy()
-        env['GIT_DIR'] = str(self.repodir)
-        refs += subprocess.run([
-            'git', 'for-each-ref', "--format=%(objectname) %(refname)"],
-            env=env,
-            check=True,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ).stdout
-        HEAD_ref = subprocess.run([
-            'git', 'symbolic-ref', 'HEAD'],
-            env=env,
-            check=True,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ).stdout
+        refs += self.run_cmd(['git', 'for-each-ref', "--format=%(objectname) %(refname)"])
+        HEAD_ref = self.run_cmd(['git', 'symbolic-ref', 'HEAD'])
         refs += '@{} HEAD\n'.format(HEAD_ref.strip())
         return refs
 
@@ -235,35 +203,21 @@ class RCloneRemote(object):
         if not self.repodir.exists():
             # ensure we have a repo
             self.repodir.mkdir()
-            subprocess.run([
-                'git', 'init', '--bare', '--quiet'],
-                env=env,
-                check=True,
-            )
+            subprocess.run(['git', 'init', '--bare', '--quiet'], env=env, check=True)
+
         # which refs did we have in the mirror before the import?
-        before = subprocess.run([
-            'git', 'for-each-ref', "--format= %(refname) %(objectname) "],
-            env=env,
-            check=True,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ).stdout
+        before = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
+
         # perform actual import
         subprocess.run([
             'git', 'fast-import', '--quiet',
             '--import-marks={}'.format(str(self.marks_rclone)),
             '--export-marks={}'.format(str(self.marks_rclone))],
-            env=env,
-            check=True,
-        )
+            env=env, check=True)
+
         # which refs do we have now?
-        after = subprocess.run([
-            'git', 'for-each-ref', "--format= %(refname) %(objectname) "],
-            env=env,
-            check=True,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        ).stdout
+        after = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
+
         # figure out if anything happened
         upload_failed_marker = (self.workdir / 'upload_failed')
         if upload_failed_marker.exists():
@@ -285,13 +239,10 @@ class RCloneRemote(object):
         # TODO acknowledge a failed upload
         if not need_sync:
             return
-        subprocess.run([
-            'git', 'gc'],
-            env=env,
-            # who knows why this would fail, but it would not be then end
-            # of the world
-            check=False,
-        )
+
+        # who knows why this would fail, but it would not be then end of the world
+        subprocess.run(['git', 'gc'], env=env, check=False)
+
         # prepare upload pack
         sync_dir = self.workdir / 'sync'
         if not sync_dir.exists():
@@ -307,10 +258,8 @@ class RCloneRemote(object):
             self.format_refs_in_mirror())
 
         self.log('Upload repository archive')
-        sync_repo = subprocess.run([
-            'rclone', 'sync', str(sync_dir),
-            '{}:{}'.format(url.netloc, url.path)],
-        )
+        sync_repo = subprocess.run(['rclone', 'sync', str(sync_dir),
+                                    '{}:{}'.format(url.netloc, url.path)])
         if sync_repo.returncode:
             # TODO we could retry...
             # make a record which refs failed to update/upload
@@ -331,62 +280,63 @@ class RCloneRemote(object):
         # just uploaded
         synced = self.workdir / 'synced'
         repo_hashes = self.get_remote_state()
-        if repo_hashes is None:
+        if not repo_hashes:
             self.log('Failed to update sync stamp after successful upload')
         else:
             synced.write_text(json.dumps(repo_hashes))
 
+    def send_capabilities(self):
+        self.PrintFrame()
+        caps = ['import',
+                'export',
+                f'refspec {self.refspec}',
+                f'*import-marks {self.marks_git}',
+                f'*export-marks {self.marks_git}',
+                'signed-tags']
+        for i in caps:
+            self.send(i)
+        self.send()
+
+    def import_from_rclone(self, line):
+        self.mirror_repo_if_needed()
+        refs = [line[7:].strip()]
+        while True:
+            line = self.instream.readline()
+            if not line.startswith('import '):
+                break
+            refs.append(line[7:].strip())
+        self.send(f'feature import-marks={self.marks_git}')
+        self.send(f'feature export-marks={self.marks_git}')
+        self.send('feature done')
+        self.import_refs_from_mirror(refs)
+        self.send('done')
+
     def communicate(self):
         """Implement the necessary pieces of the git-remote-helper protocol
-
-        Uses the input, output and error streams configured for the
-        class instance.
+        Uses the input, output and error streams from the object
         """
-        for line in self.instream:
-            if line == '\n':
-                # orderly exit command
+        self.PrintFrame()
+        for rawline in self.instream:
+            line = rawline.rstrip()
+            self.PrintFrame()
+            if not line: # exit command
                 return
-            elif line == 'capabilities\n':
-                self.send(
-                    'import\n'
-                    'export\n'
-                    'refspec {refspec}\n'
-                    '*import-marks {marks}\n'
-                    '*export-marks {marks}\n'
-                    'signed-tags\n'
-                    '\n'.format(
-                        refspec=self.refspec,
-                        marks=str(self.marks_git))
-                )
-            elif line == 'list\n':
-                self.send('{}\n'.format(self.get_remote_refs()))
-            elif line.startswith('import '):
-                # data is being imported from rclone
-                self.mirror_repo_if_needed()
-                refs = [line[7:].strip()]
-                while True:
-                    line = self.instream.readline()
-                    if not line.startswith('import '):
-                        break
-                    refs.append(line[7:].strip())
-                self.send(
-                    'feature import-marks={marks}\n'
-                    'feature export-marks={marks}\n'
-                    'feature done\n'.format(
-                        marks=str(self.marks_git))
-                )
-                self.import_refs_from_mirror(refs)
-                self.send('done\n')
-            elif line == 'export\n':
-                # data is being exported to rclone
+            elif line == 'capabilities':
+                self.send_capabilities()
+            elif line == 'list':
+                self.PrintFrame()
+                self.send(f'{self.get_remote_refs()}')
+            elif line.startswith('import '): # data is being imported from rclone
+                self.PrintFrame()
+                self.import_from_rclone(line)
+            elif line == 'export': # data is being exported to rclone
+                self.PrintFrame()
                 self.mirror_repo_if_needed()
                 self.export_to_rclone()
-                self.send(
-                    '\n'
-                )
+                self.send('')
             else:
-                self.log('UNKNOWN COMMAND', line)
-                # unrecoverable error
+                self.PrintFrame()
+                self.log('UNKNOWN COMMAND', line) # unrecoverable error
                 return
 
 
@@ -395,8 +345,7 @@ def main():
         raise ValueError("Usage: git-remote-rclone REMOTE-NAME URL")
 
     remote, url = sys.argv[1:3]
-    # no fallback, must be present
-    gitdir = os.environ['GIT_DIR']
+    gitdir = os.environ['GIT_DIR'] # no fallback, must be present
 
     rclone = RCloneRemote(gitdir, remote, url)
     rclone.communicate()
