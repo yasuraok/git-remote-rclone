@@ -105,17 +105,16 @@ class RCloneRemote(object):
         # TODO acquire and release lock
         url = self.parsed_url
         # stamp file with last syncronization IDs
-        repo_hashes = None
         synced = self.workdir / 'synced'
+        repo_hashes = self.get_remote_state()
+
+        if synced.exists() and not repo_hashes:
+            # we had it sync'ed before, but now it is gone from the remote
+            # remove sync stamp, but leave any local mirror untouched as it's the only copy
+            synced.unlink()
+            return
+
         if synced.exists():
-            repo_hashes = self.get_remote_state()
-            if not repo_hashes:
-                # we had it sync'ed before, but now it is gone from the
-                # remote -- we have all that is left locally
-                synced.unlink()
-                # sync stamp removed, but leave any local mirror untouched
-                # it may be the only copy left
-                return
             # compare states, try to be robust and take any hash match
             # unclear when which hash is available, but any should be good
             last_hashes = json.load(synced.open())
@@ -123,21 +122,15 @@ class RCloneRemote(object):
                     for k, v in last_hashes.items()):
                 # local sync matches remote situation
                 return
-        if not repo_hashes:
-            # in case we never sync'ed, obtain the ID info prior download
-            # so we have it, whenever the download succeeded
-            repo_hashes = self.get_remote_state()
-        if not repo_hashes:
-            # there is nothing at the remote end
+
+        if not repo_hashes: # there is nothing at the remote end, nothing to sync
             return
-        sync_dir = self.workdir / 'sync'
+
+        # mirror the repo
         self.log('Downloading repository archive')
-        self.log(url)
-        subprocess.run([
-            'rclone', 'copy', '{}:{}/repo.7z'.format(url.netloc, url.path),
-            str(sync_dir)],
-            check=True,
-        )
+        sync_dir = self.workdir / 'sync'
+        subprocess.run(['rclone', 'copy', '{}:{}/repo.7z'.format(url.netloc, url.path), str(sync_dir)],
+            check=True)
         repo_archive = sync_dir / 'repo.7z'
         self.log('Extracting repository archive')
         rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
@@ -156,8 +149,7 @@ class RCloneRemote(object):
             # to pull them from did not materialize. Crash at this point,
             # any recovery form such a situation should have happened
             # before
-            raise RuntimeError(
-                'rclone repository mirror not found')
+            raise RuntimeError('rclone repository mirror not found')
         env = os.environ.copy()
         env['GIT_DIR'] = str(self.repodir)
         subprocess.run([
