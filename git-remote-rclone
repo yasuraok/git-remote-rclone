@@ -120,7 +120,7 @@ class RCloneRemote(object):
             raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
 
         files = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        # get the key from files that starts with repo and ends with .tar.gz
+        # get filename of the file that looks like repo-XXXX.{tar.gz, 7z, ...}
         repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.tar.gz')]
 
         # error out if repo_file has more than one element
@@ -130,7 +130,7 @@ class RCloneRemote(object):
         # extract XXXX pattern from repo-XXXX.tar.gz
         if not repo_file:
             self.log('No repo file found')
-        return repo_file[0][5:-4] if repo_file else ''
+        return repo_file[0][5:-len('.tar.gz')] if repo_file else ''
 
     def mirror_repo_if_needed(self):
         """Ensure a local Git repo mirror of the one archived at the remote.
@@ -154,7 +154,7 @@ class RCloneRemote(object):
             # read single line string from synced file
             with open(synced, 'r') as f:
                 last_hash = f.readline().strip()
-                self.log(f'Last hash: {last_hash}. repo_hash: {repo_hash}')
+                self.log(f'Last hash: {last_hash} vs repo_hash: {repo_hash}')
             if last_hash == repo_hash: # local sync matches remote
                 return
 
