@@ -8,7 +8,7 @@ import subprocess
 import sys
 import hashlib
 from urllib.parse import urlparse
-
+import tarfile
 import inspect
 
 
@@ -99,14 +99,14 @@ class RCloneRemote(object):
             raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
 
         files = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        # get the key from files that starts with repo and ends with .7z
-        repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.7z')]
+        # get the key from files that starts with repo and ends with .tar.gz
+        repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.tar.gz')]
 
         # error out if repo_file has more than one element
         if len(repo_file) > 1:
             raise RuntimeError('Multiple repo files found: {}'.format(repo_file))
 
-        # extract XXXX pattern from repo-XXXX.7z
+        # extract XXXX pattern from repo-XXXX.tar.gz
         if not repo_file:
             self.log('No repo file found')
         return repo_file[0][5:-4] if repo_file else ''
@@ -143,27 +143,37 @@ class RCloneRemote(object):
         # mirror the repo
         self.log('Downloading repository archive')
         sync_dir = self.workdir / 'sync'
-        subprocess.run(['rclone', 'copy', '--verbose', '--include', 'repo-*.7z', '{}:{}/'.format(
+        subprocess.run(['rclone', 'copy', '--verbose', '--include', 'repo-*.tar.gz', '{}:{}/'.format(
                             url.netloc, url.path),
                        str(sync_dir)],
                        check=True)
-        repo_archive = list(sync_dir.glob('repo-*.7z'))[0]
+        repo_archive = list(sync_dir.glob('repo-*.tar.gz'))[0]
 
         self.log('Extracting repository archive')
         rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
         self.uncompress(repo_archive, self.workdir)
+        self.log(f"Uncompress done of {repo_archive} into {self.workdir}.")
         rmtree(str(sync_dir), ignore_errors=True)
         synced.write_text(repo_hash) # update sync stamp only after everything else was successful
 
+    # def uncompress(self, repo_archive, cwd):
+    #     subprocess.run(['7z', 'x', str(repo_archive)],
+    #                     cwd=str(cwd), stdout=subprocess.PIPE, check=True)
+
+    # def compress(self, repo_file, dir_to_compress, cwd):
+    #     subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
+    #                    cwd=str(self.workdir),
+    #                    stdout=subprocess.PIPE,
+    #                    check=True)
+
     def uncompress(self, repo_archive, cwd):
-        subprocess.run(['7z', 'x', str(repo_archive)],
-                        cwd=str(cwd), stdout=subprocess.PIPE, check=True)
+        with tarfile.open(str(repo_archive), 'r:gz') as tar:
+            tar.extractall(cwd)
 
     def compress(self, repo_file, dir_to_compress, cwd):
-        subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
-                       cwd=str(self.workdir),
-                       stdout=subprocess.PIPE,
-                       check=True)
+        """compress dir_to_compress into repo_file.tar.gz"""
+        with tarfile.open(str(repo_file), 'w:gz') as tar:
+            tar.add(str(cwd / dir_to_compress), arcname=dir_to_compress)
 
     def import_refs_from_mirror(self, refs):
         """Uses fast-export to pull refs from the local repository mirror
@@ -265,14 +275,14 @@ class RCloneRemote(object):
         sync_dir = self.workdir / 'sync'
         if not sync_dir.exists():
             sync_dir.mkdir()
-        repo_file = sync_dir / 'repotmp.7z'
+        repo_file = sync_dir / 'repotmp.tar.gz'
         self.compress(repo_file, 'repo', self.workdir)
 
         # compute sha1 of repo_file
         repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
 
         # rename repo_file to include repo_hash string
-        repo_file.rename(sync_dir / f'repo-{repo_hash}.7z')
+        repo_file.rename(sync_dir / f'repo-{repo_hash}.tar.gz')
         
         # dump refs for a later LIST of the remote
         (sync_dir / 'refs').write_text(self.format_refs_in_mirror())
