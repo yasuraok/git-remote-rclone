@@ -151,10 +151,19 @@ class RCloneRemote(object):
 
         self.log('Extracting repository archive')
         rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
-        subprocess.run(['7z', 'x', str(repo_archive)],
-                        cwd=str(self.workdir), stdout=subprocess.PIPE, check=True)
+        self.uncompress(repo_archive, self.workdir)
         rmtree(str(sync_dir), ignore_errors=True)
         synced.write_text(repo_hash) # update sync stamp only after everything else was successful
+
+    def uncompress(self, repo_archive, cwd):
+        subprocess.run(['7z', 'x', str(repo_archive)],
+                        cwd=str(cwd), stdout=subprocess.PIPE, check=True)
+
+    def compress(self, repo_file, dir_to_compress, cwd):
+        subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
+                       cwd=str(self.workdir),
+                       stdout=subprocess.PIPE,
+                       check=True)
 
     def import_refs_from_mirror(self, refs):
         """Uses fast-export to pull refs from the local repository mirror
@@ -257,10 +266,7 @@ class RCloneRemote(object):
         if not sync_dir.exists():
             sync_dir.mkdir()
         repo_file = sync_dir / 'repotmp.7z'
-        subprocess.run([ '7z', 'u', str(repo_file), 'repo'],
-                       cwd=str(self.workdir),
-                       stdout=subprocess.PIPE,
-                       check=True)
+        self.compress(repo_file, 'repo', self.workdir)
 
         # compute sha1 of repo_file
         repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
