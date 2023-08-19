@@ -12,6 +12,27 @@ import tarfile
 import inspect
 
 
+# 7zip based compression
+# def uncompress(repo_archive, cwd):
+#     subprocess.run(['7z', 'x', str(repo_archive)],
+#                     cwd=str(cwd), stdout=subprocess.PIPE, check=True)
+
+# def compress(repo_file, dir_to_compress, cwd):
+#     subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
+#                    cwd=str(cwd),
+#                    stdout=subprocess.PIPE,
+#                    check=True)
+
+# .tar.gz based compression
+def uncompress(repo_archive, cwd):
+    with tarfile.open(str(repo_archive), 'r:gz') as tar:
+        tar.extractall(cwd)
+
+def compress(repo_file, dir_to_compress, cwd):
+    """compress dir_to_compress into repo_file.tar.gz"""
+    with tarfile.open(str(repo_file), 'w:gz') as tar:
+        tar.add(str(cwd / dir_to_compress), arcname=dir_to_compress)
+
 class RCloneRemote(object):
     """git-remote-helper implementation to interface rclone remotes."""
     def __init__(self,
@@ -151,29 +172,10 @@ class RCloneRemote(object):
 
         self.log('Extracting repository archive')
         rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
-        self.uncompress(repo_archive, self.workdir)
+        uncompress(repo_archive, self.workdir)
         self.log(f"Uncompress done of {repo_archive} into {self.workdir}.")
         rmtree(str(sync_dir), ignore_errors=True)
         synced.write_text(repo_hash) # update sync stamp only after everything else was successful
-
-    # def uncompress(self, repo_archive, cwd):
-    #     subprocess.run(['7z', 'x', str(repo_archive)],
-    #                     cwd=str(cwd), stdout=subprocess.PIPE, check=True)
-
-    # def compress(self, repo_file, dir_to_compress, cwd):
-    #     subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
-    #                    cwd=str(self.workdir),
-    #                    stdout=subprocess.PIPE,
-    #                    check=True)
-
-    def uncompress(self, repo_archive, cwd):
-        with tarfile.open(str(repo_archive), 'r:gz') as tar:
-            tar.extractall(cwd)
-
-    def compress(self, repo_file, dir_to_compress, cwd):
-        """compress dir_to_compress into repo_file.tar.gz"""
-        with tarfile.open(str(repo_file), 'w:gz') as tar:
-            tar.add(str(cwd / dir_to_compress), arcname=dir_to_compress)
 
     def import_refs_from_mirror(self, refs):
         """Uses fast-export to pull refs from the local repository mirror
@@ -276,7 +278,7 @@ class RCloneRemote(object):
         if not sync_dir.exists():
             sync_dir.mkdir()
         repo_file = sync_dir / 'repotmp.tar.gz'
-        self.compress(repo_file, 'repo', self.workdir)
+        compress(repo_file, 'repo', self.workdir)
 
         # compute sha1 of repo_file
         repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
@@ -317,7 +319,6 @@ class RCloneRemote(object):
             synced.write_text(repo_hash)
 
     def send_capabilities(self):
-        self.PrintFrame()
         caps = ['import',
                 'export',
                 f'refspec {self.refspec}',
@@ -346,27 +347,21 @@ class RCloneRemote(object):
         """Implement the necessary pieces of the git-remote-helper protocol
         Uses the input, output and error streams from the object
         """
-        self.PrintFrame()
         for rawline in self.instream:
             line = rawline.rstrip()
-            self.PrintFrame()
             if not line: # exit command
                 return
             elif line == 'capabilities':
                 self.send_capabilities()
             elif line == 'list':
-                self.PrintFrame()
                 self.send(f'{self.get_remote_refs()}')
             elif line.startswith('import '): # data is being imported from rclone
-                self.PrintFrame()
                 self.import_from_rclone(line)
             elif line == 'export': # data is being exported to rclone
-                self.PrintFrame()
                 self.mirror_repo_if_needed()
                 self.export_to_rclone()
                 self.send('')
             else:
-                self.PrintFrame()
                 self.log('UNKNOWN COMMAND', line) # unrecoverable error
                 return
 
