@@ -12,17 +12,6 @@ import tarfile
 import inspect
 
 
-# 7zip based compression
-# def uncompress(repo_archive, cwd):
-#     subprocess.run(['7z', 'x', str(repo_archive)],
-#                     cwd=str(cwd), stdout=subprocess.PIPE, check=True)
-
-# def compress(repo_file, dir_to_compress, cwd):
-#     subprocess.run([ '7z', 'u', str(repo_file), dir_to_compress],
-#                    cwd=str(cwd),
-#                    stdout=subprocess.PIPE,
-#                    check=True)
-
 # .tar.gz based compression
 def uncompress(repo_archive, cwd):
     with tarfile.open(str(repo_archive), 'r:gz') as tar:
@@ -77,7 +66,6 @@ class RCloneRemote(object):
         print(info.lineno, info.function, file=self.errstream)
         # print(info.filename)
 
-
     def log(self, *args):
         print(*args, file=self.errstream)
 
@@ -95,7 +83,7 @@ class RCloneRemote(object):
             'rclone', 'cat', '{}:{}/refs'.format(url.netloc, url.path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, # capture errors, not having refs is a normal thing
-            universal_newlines=True)
+            text=True)
         return cat.stdout if (not cat.returncode) and cat.stdout else ''
 
     def get_remote_state(self):
@@ -120,16 +108,17 @@ class RCloneRemote(object):
             raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
 
         files = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        # get filename of the file that looks like repo-XXXX.{tar.gz, 7z, ...}
+        # get filename of the file that looks like repo-SHA1.{tar.gz, 7z, ...}
         repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.tar.gz')]
 
         # error out if repo_file has more than one element
         if len(repo_file) > 1:
             raise RuntimeError('Multiple repo files found: {}'.format(repo_file))
 
-        # extract XXXX pattern from repo-XXXX.tar.gz
+        # extract SHA1 pattern from repo-SHA1.tar.gz
         if not repo_file:
             self.log('No repo file found')
+        self.log(f"get_remote_state: {repo_file[0]}, {repo_file[0][5:-len('.tar.gz')]}")
         return repo_file[0][5:-len('.tar.gz')] if repo_file else ''
 
     def mirror_repo_if_needed(self):
@@ -195,16 +184,13 @@ class RCloneRemote(object):
             '--import-marks={}'.format(str(self.marks_rclone)),
             '--export-marks={}'.format(str(self.marks_rclone)),
             '--refspec', self.refspec] + refs,
-            env=env,
-            check=True,
-        )
-
+            env=env, check=True)
 
     def run_cmd(self, cmd):
         """Run command and return stdout"""
         env = os.environ.copy()
         env['GIT_DIR'] = str(self.repodir)
-        return subprocess.run(cmd, env=env, check=True, stdout=subprocess.PIPE, universal_newlines=True).stdout
+        return subprocess.run(cmd, env=env, check=True, stdout=subprocess.PIPE, text=True).stdout
 
     def format_refs_in_mirror(self):
         """Format a report on refs in the mirror like LIST wants it
@@ -224,7 +210,7 @@ class RCloneRemote(object):
 
         The stream is fast-import'ed into a local repository mirror first.
         If not mirror repository exists, an empty one is created. The mirror
-        is then 7z'ed and uploaded.
+        is then compressed and uploaded.
         """
         # TODO acquire and release lock
         url = self.parsed_url
@@ -250,19 +236,15 @@ class RCloneRemote(object):
 
         # figure out if anything happened
         upload_failed_marker = (self.workdir / 'upload_failed')
-        if upload_failed_marker.exists():
-            # we have some unsync'ed data from a previous attempt
+        updated_refs = []
+        need_sync = False
+        if upload_failed_marker.exists(): # we have some unsync'ed data from a previous attempt
             updated_refs = json.load(upload_failed_marker.open())
             need_sync = True
             upload_failed_marker.unlink()
-        else:
-            updated_refs = []
-            need_sync = False
+
         for line in after.splitlines():
-            if line in before:
-                # no change in ref
-                continue
-            else:
+            if line not in before: # change in ref
                 updated_refs.append(line.strip().split()[0])
                 need_sync = True
 
@@ -280,10 +262,9 @@ class RCloneRemote(object):
         repo_file = sync_dir / 'repotmp.tar.gz'
         compress(repo_file, 'repo', self.workdir)
 
-        # compute sha1 of repo_file
+        # repo_file to include the file's sha1 (so we don't depend the rclone backend being able to
+        # provide the files's hash to us. Backends like crypt don't support this)
         repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
-
-        # rename repo_file to include repo_hash string
         repo_file.rename(sync_dir / f'repo-{repo_hash}.tar.gz')
         
         # dump refs for a later LIST of the remote
@@ -293,32 +274,28 @@ class RCloneRemote(object):
         sync_repo = subprocess.run(['rclone', 'sync', str(sync_dir),
                                     '{}:{}'.format(url.netloc, url.path)])
         if sync_repo.returncode:
-            # TODO we could retry...
             # make a record which refs failed to update/upload
-            upload_failed_marker.write_text(json.dumps(updated_refs))
             # to not report refs as successfully updated
+            upload_failed_marker.write_text(json.dumps(updated_refs))
             return
-        else:
-            # we no longer need the repo archive, we keep the actual
-            # repo mirror
-            rmtree(str(sync_dir), ignore_errors=True)
 
-        # upload was successful, so we can report that
+        rmtree(str(sync_dir), ignore_errors=True) # don't need the archive (still have the mirror)
         self.log(f"Upload was successful. updated_refs: {updated_refs}")
         for ref in updated_refs:
             print('ok {}'.format(ref))
 
-        # lastly update the sync stamp to avoid redownload of what was
-        # just uploaded
+        # lastly update the sync stamp to avoid redownload of what was just uploaded
         synced = self.workdir / 'synced'
         repo_hash = self.get_remote_state()
         if not repo_hash:
             self.log('Failed to update sync stamp after successful upload')
-        else:
-            self.log(f'Updating sync stamp to repo_hash: {repo_hash}')
-            synced.write_text(repo_hash)
+            return
+
+        self.log(f'Updating sync stamp to repo_hash: {repo_hash}')
+        synced.write_text(repo_hash)
 
     def send_capabilities(self):
+        self.PrintFrame()
         caps = ['import',
                 'export',
                 f'refspec {self.refspec}',
