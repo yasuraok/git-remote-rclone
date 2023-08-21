@@ -3,7 +3,7 @@
 [![GitHub release](https://img.shields.io/github/release/datalad/git-remote-rclone.svg)](https://GitHub.com/datalad/git-remote-rclone/releases/) [![PyPI version fury.io](https://badge.fury.io/py/git-remote-rclone.svg)](https://pypi.python.org/pypi/git-remote-rclone)
 
 This is a [Git remote helper](https://git-scm.com/docs/git-remote-helpers) for
-(any?) service supported by [rclone](https://rclone.org). In other words, this
+backends supported by [rclone](https://rclone.org). In other words, this
 helper makes it possible to push and pull to a large number of storage services
 with no native Git support.
 
@@ -22,15 +22,10 @@ in a directory `myrepository/` under this DropBox account.
 
 ## Technical details
 
-`git-remote-rclone` is implemented in Python 3. In addition to a standard
-Python installation, it requires [7-Zip](https://www.7-zip.org) to be
-available. It has been tested with Python 3.7, but should work from Python 3.5
-onward.
-
 At the remote end, `git-remote-rclone` maintains a directory with two files:
 
 - `refs`: a small text file listing the refs provided by the remote
-- `repo.7z`: a 7-Zip archive of a bare Git repository
+- `repo-<SHA>.tar.gz`: an archive of a bare Git repository
 
 When interacting with a remote, `git-remote-rclone` obtains and extracts a copy
 of the remote repository archive (placed at `.git/rclone/<remote-name>` in the
@@ -46,31 +41,14 @@ and on push only).
 
 ### Tested with
 
-- `rclone` 1.50.2
+- `rclone` 1.63.1
 - Google Drive
+- Onedrive
 - DropBox
 
-## Limitations
-
-At the moment no locking is performed that would prevent simultaneous
-(conflicting) updates from two end points. But this should be straightforward
-to add support for.
-
-7-Zip archives of bare repositories are the only supported format for the
-remote at the moment (they provide a good trade-off between size and
-operational complexity). However, it would not be very effortful to support
-additional archive formats (e.g. plain ZIP with Python's built-in `zipfile`
-module), or a (compressed)
-[fast-import](https://www.git-scm.com/docs/git-fast-import)-compatible stream.
-
-## Support
-
-All bugs, concerns and enhancement requests for this software can be submitted here:
-https://github.com/datalad/git-remote-rclone/issues
 
 ## Acknowledgements
 
-This development was supported by European Union’s Horizon 2020 research and
-innovation programme under grant agreement [VirtualBrainCloud
-(H2020-EU.3.1.5.3, grant no.
-826421)](https://cordis.europa.eu/project/id/826421).
+This work is based on [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone/issues). This work changes the
+design for compatibility with rclone backends like crypt that do not support file
+hashes.
