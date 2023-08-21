@@ -63,11 +63,11 @@ class RCloneRemote(object):
         frame = callerframerecord[0]
         info = inspect.getframeinfo(frame)
 
-        print(info.lineno, info.function, file=self.errstream)
+        self.log(f"{info.function} :{info.lineno}")
         # print(info.filename)
 
     def log(self, *args):
-        print(*args, file=self.errstream)
+        print("[GCR]", *args, file=self.errstream)
 
     def send(self, msg=''):
         print(msg, end='\n', file=self.outstream, flush=True)
@@ -281,7 +281,7 @@ class RCloneRemote(object):
         rmtree(str(sync_dir), ignore_errors=True) # don't need the archive (still have the mirror)
         self.log(f"Upload was successful. updated_refs: {updated_refs}")
         for ref in updated_refs:
-            print('ok {}'.format(ref))
+            self.log('ok {}'.format(ref))
 
         # lastly update the sync stamp to avoid redownload of what was just uploaded
         synced = self.workdir / 'synced'
