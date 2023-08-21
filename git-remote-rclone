@@ -118,7 +118,6 @@ class RCloneRemote(object):
         # extract SHA1 pattern from repo-SHA1.tar.gz
         if not repo_file:
             self.log('No repo file found')
-        self.log(f"get_remote_state: {repo_file[0]}, {repo_file[0][5:-len('.tar.gz')]}")
         return repo_file[0][5:-len('.tar.gz')] if repo_file else ''
 
     def mirror_repo_if_needed(self):
@@ -143,8 +142,8 @@ class RCloneRemote(object):
             # read single line string from synced file
             with open(synced, 'r') as f:
                 last_hash = f.readline().strip()
-                self.log(f'Last hash: {last_hash} vs repo_hash: {repo_hash}')
             if last_hash == repo_hash: # local sync matches remote
+                self.log(f'Local hash matches repo_hash ({last_hash}). No need to re-mirror.')
                 return
 
         if not repo_hash: # there is nothing at the remote end, nothing to sync
