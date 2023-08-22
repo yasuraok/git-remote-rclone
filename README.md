@@ -7,6 +7,11 @@ backends supported by [rclone](https://rclone.org). In other words, this
 helper makes it possible to push and pull to a large number of storage services
 with no native Git support.
 
+## Installation
+```
+pip3 install git-remote-rclone-reds
+```
+
 ## Usage
 
 Visit the [rclone website](https://rclone.org) and follow the instructions for
