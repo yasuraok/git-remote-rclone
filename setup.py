@@ -9,7 +9,8 @@ SETUP_REQUIRES = ['setuptools >= 30.3.0']
 # This enables setuptools to install wheel on-the-fly
 SETUP_REQUIRES += ['wheel'] if 'bdist_wheel' in sys.argv else []
 
+
 if __name__ == '__main__':
-    setup(name='git_remote_rclone',
+    setup(name='git_remote_rclone_reds',
           setup_requires=SETUP_REQUIRES,
     )
