@@ -1,9 +1,11 @@
 # Git remote helper for rclone-supported services
 
 This is a [Git remote helper](https://git-scm.com/docs/git-remote-helpers) for
-backends supported by [rclone](https://rclone.org). In other words, this
-helper makes it possible to push and pull to a large number of storage services
-with no native Git support.
+backends supported by [rclone](https://rclone.org).
+
+This enables using `git pull` or `git push` with a remote git repository stored on
+popular cloud services with no native Git support. Optionally, it enables using
+zero-knowledge encryption via [rclone's crypt](https://rclone.org/crypt/).
 
 ## Installation and Usage
 
@@ -23,6 +25,19 @@ Now it is possible to use URLs like
 For example, if access to a DropBox account has been configured as an rclone-remote
 named `mydropbox`, the URL `rclone://mydropbox/myrepository` identifies a remote
 in a directory `myrepository/` under this DropBox account.
+
+## Example
+```
+mkdir testrepo; cd testrepo
+git init .
+echo "Hello world." > xyz
+git add xyz
+git commit -m "Initial commit."
+rclone mkdir mydropbox:test  # Assuming 'mydropbox' has been configured
+git remote add rclone://mydropbox/test
+git remote add origin rclone://mydropbox/test
+git push origin -u main
+```
 
 ## Technical details
 
@@ -49,6 +64,7 @@ and on push only).
 - Google Drive
 - Onedrive
 - DropBox
+- [Rclone crypt](https://rclone.org/crypt/)
 
 
 ## Acknowledgements
