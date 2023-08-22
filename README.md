@@ -1,24 +1,23 @@
 # Git remote helper for rclone-supported services
 
-[![GitHub release](https://img.shields.io/github/release/datalad/git-remote-rclone.svg)](https://GitHub.com/datalad/git-remote-rclone/releases/) [![PyPI version fury.io](https://badge.fury.io/py/git-remote-rclone.svg)](https://pypi.python.org/pypi/git-remote-rclone)
-
 This is a [Git remote helper](https://git-scm.com/docs/git-remote-helpers) for
 backends supported by [rclone](https://rclone.org). In other words, this
 helper makes it possible to push and pull to a large number of storage services
 with no native Git support.
 
-## Installation
-```
-pip3 install git-remote-rclone-reds
-```
+## Installation and Usage
 
-## Usage
+- Visit the [rclone website](https://rclone.org) and follow the instructions for
+  installation of `rclone`, and configuration of access to the desired service(s).
 
-Visit the [rclone website](https://rclone.org) and follow the instructions for
-installation of `rclone`, and configuration of access to the desired
-service(s). Install this package via pip (`pip install git-remote-rclone`), or
-place the `git-remote-rclone` executable provided here into the system path,
-such that Git can find it. Now it is possible to use URLs like
+- Install this package:
+  ```
+   pip3 install git-remote-rclone-reds
+  ```
+  or place the `git-remote-rclone` executable provided here into the system path, such
+  that Git can find it. 
+
+Now it is possible to use URLs like
 `rclone://<remote>/<path-on-remote>` as push and pull URLs for Git.
 
 For example, if access to a DropBox account has been configured as an rclone-remote

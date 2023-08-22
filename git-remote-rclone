@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3.11
 
 import json
 import os
@@ -108,14 +108,14 @@ class RCloneRemote(object):
             raise RuntimeError('Accesing rclone remote failed: {}'.format(lsjson.stderr))
 
         files = {i['Path']: i for i in json.loads(lsjson.stdout)}
-        # get filename of the file that looks like repo-SHA1.{tar.gz, 7z, ...}
+        # get filename of the file that looks like repo-SHA.tar.gz
         repo_file = [i for i in files.keys() if i.startswith('repo') and i.endswith('.tar.gz')]
 
-        # error out if repo_file has more than one element
+        # We should never have more than one repo file
         if len(repo_file) > 1:
             raise RuntimeError('Multiple repo files found: {}'.format(repo_file))
 
-        # extract SHA1 pattern from repo-SHA1.tar.gz
+        # extract SHA from repo-SHA.tar.gz
         if not repo_file:
             self.log('No repo file found')
         return repo_file[0][5:-len('.tar.gz')] if repo_file else ''
