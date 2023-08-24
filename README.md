@@ -1,5 +1,8 @@
 # Git remote helper for rclone-supported services
 
+_**TL;DR: Turn most cloud storage services (eg: Dropbox) into remote git services, with
+optional encryption.**_
+
 This is a [Git remote helper](https://git-scm.com/docs/git-remote-helpers) for
 backends supported by [rclone](https://rclone.org).
 
@@ -54,9 +57,8 @@ size and uploaded to the remote storage service. Likewise, the remote storage
 service is checked for updates before the local mirror repository is updated.
 
 `git-remote-rclone` aims to minimize API usage of remote storage services. Per
-invocation, it only queries for the state of a remote repository archive
-(checksum), downloads two files (if needed), and uploads two files (if needed,
-and on push only).
+invocation, it only queries for the filenames in the remote repository archive,
+downloads two files (if needed), and uploads two files (if needed, and on push only).
 
 ### Tested with
 
@@ -69,6 +71,6 @@ and on push only).
 
 ## Acknowledgements
 
-This work is based on [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone/issues). This work changes the
+This work is based on [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone). This work changes the
 design for compatibility with rclone backends like crypt that do not support file
-hashes.
+[[hashes]].
