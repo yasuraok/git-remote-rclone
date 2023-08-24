@@ -70,7 +70,16 @@ downloads two files (if needed), and uploads two files (if needed, and on push o
 
 ### Repo migration
 
-`git-remote-rclone-reds` is *not* backward compatible with (cannot directly read/write) existing remotes created by [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone). Migrating a repo is required. But migrating a repo back and forth between `git-remote-rclone` and `git-remote-rclone-reds` is very easy. There is just one small one-time change needed to translate between these versions: instead of `repo.7z`, `git-remote-rclone-reds` uses `repo-SHA.tar.gz`. So in theory, you could unpack, repack, and rename, using the ~/gnu/git-remote-rclone/compute_sha.py that ships with `git-remote-rclone-reds`, and that works fine. But there's a much easier way where we let `git` do all the work for us:
+`git-remote-rclone-reds` is *not* backward compatible with (cannot directly read/write) existing remotes created by [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone). Migrating a repo is required.
+
+However, migrating a repo back and forth between `git-remote-rclone` and
+`git-remote-rclone-reds` is very easy. A small one-time change is required. Instead of
+`repo.7z`, `git-remote-rclone-reds` uses `repo-SHA.tar.gz`. So in theory, you could
+unpack, repack, and rename, using the
+[`compute_sha.py`](https://github.com/redstreet/git-remote-rclone/blob/main/compute_sha.py)
+that ships with `git-remote-rclone-reds`, and that works fine.
+
+But there's a much easier way, which is to get git to do all the work:
 
 ```
 # Upgrade to git-remote-rclone-reds
@@ -89,9 +98,8 @@ git push -u new main
 ```
 This works for migrations in the opposite direction too.
 
-
 ## Acknowledgements
 
 This work is based on [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone). This work changes the
 design for compatibility with rclone backends like crypt that do not support file
-[[hashes]].
+[hashes](https://github.com/datalad/git-remote-rclone/issues/6).
