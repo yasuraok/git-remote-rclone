@@ -68,6 +68,27 @@ downloads two files (if needed), and uploads two files (if needed, and on push o
 - DropBox
 - [Rclone crypt](https://rclone.org/crypt/)
 
+### Repo migration
+
+`git-remote-rclone-reds` is *not* backward compatible with (cannot directly read/write) existing remotes created by [datalad/git-remote-rclone](https://github.com/datalad/git-remote-rclone). Migrating a repo is required. But migrating a repo back and forth between `git-remote-rclone` and `git-remote-rclone-reds` is very easy. There is just one small one-time change needed to translate between these versions: instead of `repo.7z`, `git-remote-rclone-reds` uses `repo-SHA.tar.gz`. So in theory, you could unpack, repack, and rename, using the ~/gnu/git-remote-rclone/compute_sha.py that ships with `git-remote-rclone-reds`, and that works fine. But there's a much easier way where we let `git` do all the work for us:
+
+```
+# Upgrade to git-remote-rclone-reds
+pip3 uninstall git-remote-rclone
+pip3 install git-remote-rclone-reds
+
+# Upgrade the repo.
+git remote -v
+origin  rclone://cloud/old (fetch)
+origin  rclone://cloud/old (push)
+
+git remote add new rclone://cloud/new
+git push -u new main
+
+# You can now verify rclone://cloud/new looks right, and then rename it to `origin`
+```
+This works for migrations in the opposite direction too.
+
 
 ## Acknowledgements
 
