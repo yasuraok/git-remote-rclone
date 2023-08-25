@@ -230,6 +230,9 @@ class RCloneRemote(object):
             '--export-marks={}'.format(str(self.marks_rclone))],
             env=env, check=True)
 
+        # TODO: do this optionally? Based on some git config key/value?
+        subprocess.run(['git', 'gc', '--prune=now', '--aggressive'], env=env, check=True)
+
         # which refs do we have now?
         after = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
 
