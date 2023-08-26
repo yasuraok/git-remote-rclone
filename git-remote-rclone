@@ -42,6 +42,7 @@ class RCloneRemote(object):
         self.parsed_url = urlparse(url)
         self.remote = remote
         # internal logic relies on workdir to be an absolute path
+        self.gitdir = gitdir
         self.workdir = Path(gitdir, 'rclone', remote).resolve()
         self.repodir = self.workdir / 'repo'
         self.marks_git = self.workdir / "git.marks"
@@ -185,11 +186,12 @@ class RCloneRemote(object):
             '--refspec', self.refspec] + refs,
             env=env, check=True)
 
-    def run_cmd(self, cmd):
+    def run_cmd(self, cmd, env=None, check=True):
         """Run command and return stdout"""
-        env = os.environ.copy()
-        env['GIT_DIR'] = str(self.repodir)
-        return subprocess.run(cmd, env=env, check=True, stdout=subprocess.PIPE, text=True).stdout
+        if not env:
+            env = os.environ.copy()
+            env['GIT_DIR'] = str(self.repodir)
+        return subprocess.run(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
 
     def format_refs_in_mirror(self):
         """Format a report on refs in the mirror like LIST wants it
@@ -203,6 +205,24 @@ class RCloneRemote(object):
         HEAD_ref = self.run_cmd(['git', 'symbolic-ref', 'HEAD'])
         refs += '@{} HEAD\n'.format(HEAD_ref.strip())
         return refs
+
+    def gitgc(self):
+        """Prune aggressively if configured via:
+             git config --add gitremoterclone.prunefirst "true"
+        """
+        env_orig = os.environ.copy()
+        env_orig['GIT_DIR'] = str(self.gitdir)
+        env = os.environ.copy()
+        env['GIT_DIR'] = str(self.repodir)
+
+        prune = self.run_cmd(['git', 'config', 'gitremoterclone.prunefirst'],
+                             env=env_orig, check=False).strip().lower()
+        self.log(f"Prune is: {prune}")
+        gc_cmd = ['git', 'gc']
+        if prune == "true":
+            self.log("Pruning repository")
+            gc_cmd += ['--prune=now', '--aggressive']
+        subprocess.run(['git', 'gc', '--prune=now', '--aggressive'], env=env, check=False)
 
     def export_to_rclone(self):
         """Export a fast-export stream to rclone.
@@ -230,9 +250,6 @@ class RCloneRemote(object):
             '--export-marks={}'.format(str(self.marks_rclone))],
             env=env, check=True)
 
-        # TODO: do this optionally? Based on some git config key/value?
-        subprocess.run(['git', 'gc', '--prune=now', '--aggressive'], env=env, check=True)
-
         # which refs do we have now?
         after = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
 
@@ -254,8 +271,7 @@ class RCloneRemote(object):
         if not need_sync:
             return
 
-        # who knows why this would fail, but it would not be then end of the world
-        subprocess.run(['git', 'gc'], env=env, check=False)
+        self.gitgc()
 
         # prepare upload pack
         sync_dir = self.workdir / 'sync'

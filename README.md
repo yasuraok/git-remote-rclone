@@ -29,6 +29,15 @@ For example, if access to a DropBox account has been configured as an rclone-rem
 named `mydropbox`, the URL `rclone://mydropbox/myrepository` identifies a remote
 in a directory `myrepository/` under this DropBox account.
 
+## Configuration
+`git-remote-rclone` can be configured to get git to prune the repo aggressively before
+uploading via rclone. This comes in handy to minimize the uploaded file size. To
+configure it, run this in your git repo:
+
+```
+git config --add gitremoterclone.prunefirst "true"
+```
+
 ## Example
 ```
 mkdir testrepo; cd testrepo
