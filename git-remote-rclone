@@ -215,14 +215,13 @@ class RCloneRemote(object):
         env = os.environ.copy()
         env['GIT_DIR'] = str(self.repodir)
 
+        gc_cmd = ['git', 'gc']
         prune = self.run_cmd(['git', 'config', 'git-remote-rclone.pruneaggressively'],
                              env=env_orig, check=False).strip().lower()
-        self.log(f"Prune is: {prune}")
-        gc_cmd = ['git', 'gc']
         if prune == "true":
-            self.log("Pruning repository")
+            self.log("Running git-gc with aggressive pruning")
             gc_cmd += ['--prune=now', '--aggressive']
-        subprocess.run(['git', 'gc', '--prune=now', '--aggressive'], env=env, check=False)
+        subprocess.run(gc_cmd, env=env, check=False)
 
     def export_to_rclone(self):
         """Export a fast-export stream to rclone.
