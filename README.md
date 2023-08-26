@@ -33,12 +33,13 @@ in a directory `myrepository/` under this DropBox account.
 
 `git-remote-rclone` can be configured to get git to prune the repo aggressively before
 uploading via rclone. This comes in handy to minimize the uploaded file size, at the
-cost of the time taken to prune. This is a good tradeoff for low-bandwidth situations.
-To configure it, run this in your git repo:
+cost of the time taken to prune. This can be a good tradeoff for low-bandwidth
+situations. To configure it, run this in your git repo:
 
 ```
 git config --add git-remote-rclone.pruneaggressively "true"
 ```
+`git-gc` is run only on the repo that is uploaded. The local repo is left untouched.
 
 ## Example
 ```

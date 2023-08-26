@@ -144,7 +144,7 @@ class RCloneRemote(object):
             with open(synced, 'r') as f:
                 last_hash = f.readline().strip()
             if last_hash == repo_hash: # local sync matches remote
-                self.log(f'Local hash matches repo_hash ({last_hash}). No need to re-mirror.')
+                self.log(f'Local hash matches remote hash ({last_hash}). No need to re-mirror.')
                 return
 
         if not repo_hash: # there is nothing at the remote end, nothing to sync
@@ -207,13 +207,11 @@ class RCloneRemote(object):
         return refs
 
     def gitgc(self):
-        """Prune aggressively if configured via:
+        """Prune the remote repo aggressively if configured via:
              git config --add git-remote-rclone.pruneaggressively "true"
         """
         env_orig = os.environ.copy()
         env_orig['GIT_DIR'] = str(self.gitdir)
-        env = os.environ.copy()
-        env['GIT_DIR'] = str(self.repodir)
 
         gc_cmd = ['git', 'gc']
         prune = self.run_cmd(['git', 'config', 'git-remote-rclone.pruneaggressively'],
@@ -221,7 +219,7 @@ class RCloneRemote(object):
         if prune == "true":
             self.log("Running git-gc with aggressive pruning")
             gc_cmd += ['--prune=now', '--aggressive']
-        subprocess.run(gc_cmd, env=env, check=False)
+        self.run_cmd(gc_cmd, check=False)
 
     def export_to_rclone(self):
         """Export a fast-export stream to rclone.
@@ -310,6 +308,7 @@ class RCloneRemote(object):
 
         self.log(f'Updating sync stamp to repo_hash: {repo_hash}')
         synced.write_text(repo_hash)
+
 
     def send_capabilities(self):
         self.PrintFrame()
