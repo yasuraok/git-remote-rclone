@@ -208,14 +208,14 @@ class RCloneRemote(object):
 
     def gitgc(self):
         """Prune aggressively if configured via:
-             git config --add gitremoterclone.prunefirst "true"
+             git config --add git-remote-rclone.pruneaggressively "true"
         """
         env_orig = os.environ.copy()
         env_orig['GIT_DIR'] = str(self.gitdir)
         env = os.environ.copy()
         env['GIT_DIR'] = str(self.repodir)
 
-        prune = self.run_cmd(['git', 'config', 'gitremoterclone.prunefirst'],
+        prune = self.run_cmd(['git', 'config', 'git-remote-rclone.pruneaggressively'],
                              env=env_orig, check=False).strip().lower()
         self.log(f"Prune is: {prune}")
         gc_cmd = ['git', 'gc']
