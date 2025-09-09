@@ -170,7 +170,31 @@ class RCloneRemote(object):
         repo_archive = list(sync_dir.glob('repo-*.tar.gz'))[0]
 
         self.log('Extracting repository archive')
-        rmtree(str(self.repodir), ignore_errors=True) # clean left-overs
+
+        def handle_rmtree_error(func, path, exc):
+            """Error handler for rmtree that handles different exception types"""
+            import stat
+            # Check the exception type to handle appropriately
+            exc_type, exc_value, exc_traceback = exc
+
+            if exc_type == FileNotFoundError:
+                # File/directory doesn't exist, nothing to remove
+                return
+            elif exc_type == PermissionError or (hasattr(exc_value, 'winerror') and exc_value.winerror == 5):
+                # Permission denied, try to remove readonly attribute (Windows-specific issue)
+                if os.path.exists(path):
+                    try:
+                        os.chmod(path, stat.S_IWRITE)
+                        func(path)
+                    except FileNotFoundError:
+                        # File was deleted between exists check and chmod
+                        pass
+            else:
+                # Other errors, re-raise
+                raise exc_value
+
+        rmtree(str(self.repodir), onerror=handle_rmtree_error)
+
         uncompress(repo_archive, self.workdir)
         self.log(f"Uncompress done of {repo_archive} into {self.workdir}.")
         rmtree(str(sync_dir), ignore_errors=True)
