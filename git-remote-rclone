@@ -67,16 +67,6 @@ class RCloneRemote(object):
         self.marks_git.touch()
         self.marks_rclone.touch()
 
-    def PrintFrame(self):
-        """Helps debug"""
-        callerframerecord = inspect.stack()[1]    # 0 represents this line
-                                                  # 1 represents line at caller
-        frame = callerframerecord[0]
-        info = inspect.getframeinfo(frame)
-
-        self.log(f"{info.function} :{info.lineno}")
-        # print(info.filename)
-
     def log(self, *args):
         print("[GCR]", *args, file=self.errstream)
 
@@ -88,14 +78,15 @@ class RCloneRemote(object):
         There are kept in a dedicated "refs" file at the remote.
         Returns str
         """
-        self.PrintFrame()
         url = self.parsed_url
         cat = subprocess.run([
             'rclone', 'cat', '{}:{}/refs'.format(url.netloc, url.path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, # capture errors, not having refs is a normal thing
             text=True)
-        return cat.stdout if (not cat.returncode) and cat.stdout else ''
+        result = cat.stdout if (not cat.returncode) and cat.stdout else ''
+        self.log(f"remote refs: {repr(result)}")
+        return result
 
     def get_remote_state(self):
         """Return a hash for the remote repo archive or ''
@@ -270,6 +261,7 @@ class RCloneRemote(object):
             # ensure we have a repo
             self.repodir.mkdir()
             subprocess.run(['git', 'init', '--bare', '--quiet'], env=env, check=True)
+            self.log(f"Repository mirror created at {self.repodir}")
 
         # which refs did we have in the mirror before the import?
         before = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
@@ -345,15 +337,15 @@ class RCloneRemote(object):
 
 
     def send_capabilities(self):
-        self.PrintFrame()
         caps = ['import',
                 'export',
                 f'refspec {self.refspec}',
                 f'*import-marks {self.marks_git}',
                 f'*export-marks {self.marks_git}',
                 'signed-tags']
-        for i in caps:
-            self.send(i)
+        for cap in caps:
+            self.send(cap)
+            self.log(f"Sent capability: {cap}")
         self.send()
 
     def import_from_rclone(self, line):
@@ -378,7 +370,10 @@ class RCloneRemote(object):
             line = rawline.rstrip()
             if not line: # exit command
                 return
-            elif line == 'capabilities':
+
+            self.log(f"Received command: {repr(line)}")
+
+            if line == 'capabilities':
                 self.send_capabilities()
             elif line == 'list':
                 self.send(f'{self.get_remote_refs()}')
