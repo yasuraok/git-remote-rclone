@@ -62,6 +62,8 @@ class RCloneRemote(object):
         self.outstream = outstream
         self.errstream = errstream
 
+        self.log(f"Initializing RCloneRemote on cwd={os.getcwd()}, with gitdir={gitdir}, remote={remote}, url={url}")
+
         # TODO delay
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.marks_git.touch()
@@ -211,11 +213,16 @@ class RCloneRemote(object):
             '--refspec', self.refspec] + refs,
             env=env, check=True)
 
-    def run_cmd(self, cmd, env=None, check=True):
-        """Run command and return stdout"""
-        if not env:
-            env = os.environ.copy()
-            env['GIT_DIR'] = str(self.repodir)
+    def run_git(self, cmd, check=True):
+        """Run command in the local repo and return stdout"""
+        env = os.environ.copy()
+        # env['GIT_DIR'] = str(self.gitdir) # should be already set
+        return subprocess.run(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
+
+    def run_git_mirror(self, cmd, check=True):
+        """Run command in the mirror repo and return stdout"""
+        env = os.environ.copy()
+        env['GIT_DIR'] = str(self.repodir)
         return subprocess.run(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
 
     def format_refs_in_mirror(self):
@@ -226,8 +233,8 @@ class RCloneRemote(object):
         refs = ''
         if not self.repodir.exists():
             return refs
-        refs += self.run_cmd(['git', 'for-each-ref', "--format=%(objectname) %(refname)"])
-        HEAD_ref = self.run_cmd(['git', 'symbolic-ref', 'HEAD'])
+        refs += self.run_git_mirror(['git', 'for-each-ref', "--format=%(objectname) %(refname)"])
+        HEAD_ref = self.run_git_mirror(['git', 'symbolic-ref', 'HEAD'])
         refs += '@{} HEAD\n'.format(HEAD_ref.strip())
         return refs
 
@@ -235,16 +242,13 @@ class RCloneRemote(object):
         """Prune the remote repo aggressively if configured via:
              git config --add git-remote-rclone.pruneaggressively "true"
         """
-        env_orig = os.environ.copy()
-        env_orig['GIT_DIR'] = str(self.gitdir)
-
         gc_cmd = ['git', 'gc']
-        prune = self.run_cmd(['git', 'config', 'git-remote-rclone.pruneaggressively'],
-                             env=env_orig, check=False).strip().lower()
+        prune = self.run_git(['git', 'config', 'git-remote-rclone.pruneaggressively'],
+                             check=False).strip().lower()
         if prune == "true":
             self.log("Running git-gc with aggressive pruning")
             gc_cmd += ['--prune=now', '--aggressive']
-        self.run_cmd(gc_cmd, check=False)
+        self.run_git_mirror(gc_cmd, check=False)
 
     def export_to_rclone(self):
         """Export a fast-export stream to rclone.
@@ -264,7 +268,7 @@ class RCloneRemote(object):
             self.log(f"Repository mirror created at {self.repodir}")
 
         # which refs did we have in the mirror before the import?
-        before = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
+        before = self.run_git_mirror(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
 
         # perform actual import
         subprocess.run([
@@ -274,7 +278,7 @@ class RCloneRemote(object):
             env=env, check=True)
 
         # which refs do we have now?
-        after = self.run_cmd(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
+        after = self.run_git_mirror(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
 
         # figure out if anything happened
         upload_failed_marker = (self.workdir / 'upload_failed')
