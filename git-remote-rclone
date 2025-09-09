@@ -22,6 +22,11 @@ else:
     pass
 
 
+# verbose subprocess calls for debugging
+def run_verbose(cmd, **kwargs):
+    print(f"Running command: {' '.join(cmd)}", file=sys.stderr)
+    return subprocess.run(cmd, **kwargs)
+
 # .tar.gz based compression
 def uncompress(repo_archive, cwd):
     with tarfile.open(str(repo_archive), 'r:gz') as tar:
@@ -217,13 +222,13 @@ class RCloneRemote(object):
         """Run command in the local repo and return stdout"""
         env = os.environ.copy()
         # env['GIT_DIR'] = str(self.gitdir) # should be already set
-        return subprocess.run(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
+        return run_verbose(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
 
     def run_git_mirror(self, cmd, check=True):
         """Run command in the mirror repo and return stdout"""
         env = os.environ.copy()
         env['GIT_DIR'] = str(self.repodir)
-        return subprocess.run(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
+        return run_verbose(cmd, env=env, check=check, stdout=subprocess.PIPE, text=True).stdout
 
     def format_refs_in_mirror(self):
         """Format a report on refs in the mirror like LIST wants it
