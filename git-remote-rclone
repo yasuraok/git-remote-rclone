@@ -277,6 +277,11 @@ class RCloneRemote(object):
             '--export-marks={}'.format(str(self.marks_rclone))],
             env=env, check=True)
 
+        # Always sync HEAD from local repository to mirror repository
+        # This ensures the mirror repository's HEAD always exists and points to the same branch as the local repository
+        local_head_ref = self.run_git(['git', 'symbolic-ref', 'HEAD']).strip() # get current HEAD
+        self.run_git_mirror(['git', 'symbolic-ref', 'HEAD', local_head_ref]) # set HEAD to mirror
+
         # which refs do we have now?
         after = self.run_git_mirror(['git', 'for-each-ref', "--format= %(refname) %(objectname) "])
 
