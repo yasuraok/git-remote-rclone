@@ -11,6 +11,16 @@ from urllib.parse import urlparse
 import tarfile
 import inspect
 
+# Windows-specific fix: Prevent automatic CRLF conversion
+# This ensures that all output uses LF only, preventing issues with git fast-import
+if hasattr(sys.stdout, 'reconfigure'):
+    # Python 3.7+
+    sys.stdout.reconfigure(newline='\n')
+    sys.stderr.reconfigure(newline='\n')
+else:
+    # For older Python versions, we'll handle this in the send() method
+    pass
+
 
 # .tar.gz based compression
 def uncompress(repo_archive, cwd):
@@ -281,7 +291,7 @@ class RCloneRemote(object):
         # provide the files's hash to us. Backends like crypt don't support this)
         repo_hash = hashlib.sha1(repo_file.read_bytes()).hexdigest()
         repo_file.rename(sync_dir / f'repo-{repo_hash}.tar.gz')
-        
+
         # dump refs for a later LIST of the remote
         (sync_dir / 'refs').write_text(self.format_refs_in_mirror())
 
